@@ -1,26 +1,30 @@
 {
   "name": "dsh-grok-memory",
-  "version": "0.2.0",
-  "description": "Grok Build-style cross-session memory for DeepSeek Harness: markdown notes (global + project scope), first-turn injection so new conversations share prior project memory, session logs, /remember /flush /dream, SQLite full-text search.",
+  "version": "0.3.0",
+  "description": "Five-track cross-session memory for DeepSeek Harness: injected global/user/key facts plus on-demand project/daily logs, first-turn injection so new conversations share prior project memory, SQLite FTS5 search, /remember /flush /dream, and a user-confirmation queue for injected facts.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
-    "./store": "./lib/store.js",
+    "./tracks": "./lib/tracks.js",
     "./search": "./lib/search.js",
     "./dream": "./lib/dream.js",
     "./inject": "./lib/inject.js",
+    "./suggest": "./lib/suggest.js",
     "./package.json": "./package.json"
   },
   "files": [
     "lib",
+    "scripts",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "check": "node --check lib/index.js && node --check lib/store.js && node --check lib/search.js && node --check lib/dream.js && node --check lib/inject.js",
-    "test": "node --test test/*.test.mjs"
+    "check": "node --check lib/index.js && node --check lib/tracks.js && node --check lib/search.js && node --check lib/dream.js && node --check lib/inject.js && node --check lib/suggest.js",
+    "test": "node --test test/*.test.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "migrate": "node scripts/migrate-v0.2.mjs"
   },
   "dsh": {
     "bundle": {
@@ -41,7 +45,7 @@
     "@deepseek-ai/dsh-tools": { "optional": true },
     "@deepseek-ai/schemastery": { "optional": true }
   },
-  "keywords": ["deepseek-harness", "dsh", "memory", "cross-session", "grok", "dream"],
+  "keywords": ["deepseek-harness", "dsh", "memory", "cross-session", "grok", "dream", "five-track"],
   "license": "MIT",
   "repository": { "type": "git", "url": "git+https://github.com/xuediner-source/dsh-grok-memory.git" },
   "engines": { "node": ">=22.0.0" }

@@ -61,7 +61,7 @@ export async function loadPlugin() {
   const src = join(ROOT, 'lib', 'index.js');
   // rewrite relative imports so the copy resolves against the plugin's lib/
   const text = readFileSync(src, 'utf8')
-    .replace(/from '\.\/(store|search|dream|inject)\.js'/g, (m, f) => `from ${JSON.stringify(pathToFileURL(join(ROOT, 'lib', `${f}.js`)).href)}`);
+    .replace(/from '\.\/(tracks|search|dream|inject|suggest)\.js'/g, (m, f) => `from ${JSON.stringify(pathToFileURL(join(ROOT, 'lib', `${f}.js`)).href)}`);
   writeFileSync(copy, text);
   return import(`${pathToFileURL(copy).href}?t=${Date.now()}`);
 }
