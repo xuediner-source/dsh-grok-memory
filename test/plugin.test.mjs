@@ -194,36 +194,82 @@ describe('plugin: same-project sharing', () => {
 });
 
 describe('plugin: lifecycle hooks', () => {
-  it('settled counts a session toward the dream gates and skips trivial ones', async () => {
+  /**
+   * A session carrying user/message events — the authoritative shape verified
+   * in @deepseek-ai/dsh-session: for `user/message` the event data IS the
+   * message record ({ role, source.kind, content }).
+   */
+  function agentWithEvents(dir, prompts, id = 'sess-1') {
+    const events = prompts.map((text, i) => ({
+      type: 'user/message',
+      data: {
+        id: `m${i}`,
+        role: 'user',
+        source: { kind: 'user' },
+        content: [{ type: 'text', text }],
+      },
+    }));
+    return { session: { id, header: { cwd: dir }, events } };
+  }
+
+  it('settled reads session events, writes one summary, and never calls next', async () => {
     const mod = await loadPlugin();
     const { ctx, host } = makeHost();
     const dir = cwd();
     const root = memoryRoot();
     mod.apply(ctx, { memoryRoot: root });
 
-    const stopping = host.listeners.get('agent/turn-stopping');
     const settled = host.listeners.get('agent/settled');
-    assert.ok(stopping?.length, 'turn-stopping hook must be registered');
     assert.ok(settled?.length, 'settled hook must be registered');
 
-    // Feed three substantive prompts through turn-stopping, then settle.
-    const messages = [
-      { source: { kind: 'user' }, content: [{ type: 'text', text: 'refactor the auth middleware for async token validation' }], sessionId: 'sess-1' },
-      { source: { kind: 'user' }, content: [{ type: 'text', text: 'add tests covering the expired-token path' }], sessionId: 'sess-1' },
-      { source: { kind: 'user' }, content: [{ type: 'text', text: 'run the full test suite and report failures' }], sessionId: 'sess-1' },
+    const prompts = [
+      'refactor the auth middleware for async token validation',
+      'add tests covering the expired-token path',
+      'run the full test suite and report failures',
     ];
-    await emit(host, 'agent/turn-stopping', { messages });
-    await emit(host, 'agent/settled', { agent: agentFor(dir) });
+    const agent = agentWithEvents(dir, prompts);
 
-    // The session log should now hold a metadata summary.
+    // Cordis serial dispatch: positional args only, no `next` callback.
+    // Passing a next() here would mask the exact crash seen in the host log.
+    await emit(host, 'agent/settled', agent, 1, { kind: 'completed' });
+
     const store = await import(new URL('../lib/store.js', import.meta.url).href);
     const paths = store.pathsFor(dir, root);
     const groups = store.listMemory(paths);
     assert.ok(groups.sessions.length >= 1, 'a dated session summary must be written');
+    const body = store.readText(groups.sessions[0]);
+    assert.match(body, /auth middleware/, 'topics must come from user/message events');
 
-    const before = store.readText(groups.sessions[0]);
-    await emit(host, 'agent/settled', { agent: agentFor(dir) });
+    const before = body;
+    await emit(host, 'agent/settled', agent, 2, { kind: 'completed' });
     const after = store.readText(groups.sessions[0]);
     assert.equal(after, before, 'a second settle of the same conversation must not duplicate the summary');
+  });
+
+  it('turn-stopping hook tolerates the real {turn,signal} payload without a next callback', async () => {
+    const mod = await loadPlugin();
+    const { ctx, host } = makeHost();
+    mod.apply(ctx, { memoryRoot: memoryRoot() });
+
+    const stopping = host.listeners.get('agent/turn-stopping');
+    assert.ok(stopping?.length, 'turn-stopping hook must be registered');
+
+    // Exactly what the host dispatches: dispatch.serial(name, { turn, signal }).
+    // This must not throw — "next is not a function" broke live turns.
+    const controller = new AbortController();
+    await emit(host, 'agent/turn-stopping', { turn: 1, signal: controller.signal });
+  });
+
+  it('skips trivial sessions (fewer than 3 substantive prompts)', async () => {
+    const mod = await loadPlugin();
+    const { ctx, host } = makeHost();
+    const dir = cwd();
+    const root = memoryRoot();
+    mod.apply(ctx, { memoryRoot: root });
+
+    await emit(host, 'agent/settled', agentWithEvents(dir, ['hi']), 1, { kind: 'completed' });
+    const store = await import(new URL('../lib/store.js', import.meta.url).href);
+    const groups = store.listMemory(store.pathsFor(dir, root));
+    assert.equal(groups.sessions.length, 0, 'a trivial session must not produce a summary');
   });
 });

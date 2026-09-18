@@ -10,7 +10,7 @@
  * services onto the plugin's own ctx, so the mock exposes commands / tools /
  * systemPrompt / on / effect as ctx properties.
  */
-import { mkdirSync, writeFileSync, symlinkSync, existsSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -20,13 +20,16 @@ const STUBS = join(HERE, '.stubs');
 
 const STUB_SOURCES = {
   schemastery: `
-const chain = () => { const o = {}; o.default = () => o; o.required = () => o; o.min = () => o; o.max = () => o; return o; };
+const chain = () => { const o = {}; o.default = () => o; o.required = () => o; o.min = () => o; o.max = () => o; o.step = () => o; return o; };
 const z = () => chain();
 z.object = (shape) => { const o = { shape }; o.default = () => o; return o; };
 z.string = () => chain();
 z.boolean = () => chain();
 z.number = () => chain();
 z.array = () => chain();
+z.union = () => chain();
+z.const = () => chain();
+z.natural = () => chain();
 export default z;
 `,
   'dsh-tools': `export const defineTool = (tool) => {
@@ -40,18 +43,13 @@ export default z;
 
 export function ensureStubs() {
   const nm = join(STUBS, 'node_modules', '@deepseek-ai');
+  try { rmSync(nm, { recursive: true, force: true }); } catch { /* first run */ }
   mkdirSync(nm, { recursive: true });
   for (const [name, source] of Object.entries(STUB_SOURCES)) {
     const dir = join(nm, name);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: `@deepseek-ai/${name}`, version: '0.0.0', type: 'module', main: 'index.js', exports: { '.': './index.js' } }));
     writeFileSync(join(dir, 'index.js'), source);
-  }
-  // pull the real schemastery if present at repo root
-  const real = join(ROOT, 'node_modules', '@deepseek-ai', 'schemastery');
-  const link = join(nm, 'schemastery');
-  if (existsSync(real) && existsSync(link)) {
-    try { rmSync(link, { recursive: true, force: true }); symlinkSync(real, link, 'junction'); } catch { /* stub stays */ }
   }
   return STUBS;
 }
@@ -101,11 +99,19 @@ export function makeHost() {
   return { ctx, host };
 }
 
-/** Fire a registered hook for tests. */
-export async function emit(host, event, payload) {
+/**
+ * Fire a registered hook exactly the way cordis does.
+ *
+ * Verified host contract (@deepseek-ai/cordis lib/index.js `dispatch` +
+ * `serial`): listeners receive ONLY positional arguments — the event name is
+ * shifted off, then `cb(...args)` runs with the payload. There is NO waterfall
+ * `next` callback. The previous harness passed a synthetic `next` into every
+ * listener, which masked a real crash ("next is not a function") that broke
+ * the turn loop inside the live host.
+ */
+export async function emit(host, event, ...args) {
   const handlers = host.listeners.get(event) ?? [];
-  const next = () => ({ kind: 'enter', messages: payload?.messages ?? [] });
-  let decision;
-  for (const h of handlers) decision = await h(payload ?? {}, next);
-  return decision;
+  let out;
+  for (const h of handlers) out = await h(...args);
+  return out;
 }

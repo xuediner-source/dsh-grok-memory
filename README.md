@@ -12,6 +12,8 @@ dsh plugin --profile web add github:xuediner-source/dsh-grok-memory
 
 重启 DSH 后即生效。
 
+插件目录下不要安装 `@deepseek-ai/*`（包括把 DSH 的 `node_modules` 拷进来）。那些包必须由 DSH 主机提供；本地一份会盖掉主机解析，并曾导致 `z.const is not a function` 整棵插件树加载失败。
+
 ## 能力（对照官方规格）
 
 | 官方机制 | 本插件实现 |

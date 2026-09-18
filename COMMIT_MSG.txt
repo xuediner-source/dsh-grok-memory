@@ -1,0 +1,25 @@
+fix: lifecycle hooks follow the real cordis serial contract
+
+Host log showed turns failing with "next is not a function". Root cause:
+cordis `dispatch.serial(name, payload)` shifts off the event name, then calls
+`cb(...args)` — listeners receive ONLY positional arguments. There is no
+waterfall `next` callback on these events.
+
+- agent/turn-stopping -> cb({ turn, signal })   (no messages, no agent)
+- agent/settled       -> cb(agent, turn, reason)  positional
+- agent/disposed      -> cb({ agent })
+
+The old hook did `await next()` on every turn end, which broke the turn loop.
+The old settled handler destructured `({ agent })` and silently lost the agent
+(the first positional arg IS the agent). Both fixed.
+
+User text for session summaries now comes from session events (type
+"user/message", data IS the message record — verified in @deepseek-ai/dsh-session),
+with the turn buffer as fallback. inject.js gains userTextFromEvents() and
+latestUserText() reads events too.
+
+Test harness emit() now dispatches exactly like cordis (positional args, no
+next) — the old harness passed a synthetic next() into every listener, which
+masked the crash. Verified against real defineTool + real host payload shapes:
+all checks pass; contract reproduction shows the legacy shape throws exactly
+the host error while the fixed shape does not.
