@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -26,12 +27,21 @@ describe('store: layout and identity', () => {
   });
 
   it('clones of the same origin share one memory directory (official rule)', () => {
-    // Simulate two clones pointing at the same origin by seeding a fake git remote.
-    // Since projectIdentity reads `git remote get-url origin`, a non-git dir falls
-    // back to the path; two DIFFERENT paths must therefore differ.
-    const a = store.projectSlug(tmp());
-    const b = store.projectSlug(tmp());
-    assert.notEqual(a, b, 'distinct paths must not collide');
+    const origin = 'https://github.com/acme/shared-app.git';
+    const makeClone = () => {
+      const dir = tmp();
+      const git = (...args) => execFileSync('git', ['-C', dir, ...args], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      git('init', '-q');
+      git('remote', 'add', 'origin', origin);
+      return dir;
+    };
+    const a = store.projectSlug(makeClone());
+    const b = store.projectSlug(makeClone());
+    assert.equal(a, b, 'clones/worktrees of the same origin must share one slug');
+    assert.notEqual(store.projectSlug(tmp()), a, 'a path-identity workspace must not collide with an origin slug');
   });
 
   it('lays out MEMORY.md / sessions / topics per scope', () => {
@@ -217,5 +227,32 @@ describe('dream: gates, locks, consolidation', () => {
     // File paths come only from the user's own prompts (topics), never
     // extracted from tool calls — src/auth appears because the USER typed it.
     assert.match(md, /Topics/);
+  });
+});
+
+describe('inject: first-turn snapshot', () => {
+  it('builds an empty snapshot when nothing is stored', async () => {
+    const inject = await loadLib('inject');
+    const dir = tmp();
+    const paths = store.pathsFor(dir, join(dir, 'memory'));
+    store.ensureDirs(paths);
+    assert.equal(inject.buildInjection({ paths, query: 'auth' }), '');
+  });
+
+  it('injects curated workspace memory so a new conversation shares it', async () => {
+    const inject = await loadLib('inject');
+    const dir = tmp();
+    const paths = store.pathsFor(dir, join(dir, 'memory'));
+    store.appendEntry(paths.projectMemory, 'Preferences', 'always open PR links after pushing');
+    const snap = inject.buildInjection({ paths, includeRecall: false });
+    assert.match(snap, /Cross-session memory/);
+    assert.match(snap, /always open PR links after pushing/);
+    assert.match(snap, /current conversation take precedence/i);
+  });
+
+  it('turns a user prompt into an FTS-safe query', async () => {
+    const inject = await loadLib('inject');
+    assert.equal(inject.searchQueryOf('Search memory for "auth middleware patterns"!'), 'search memory for auth middleware patterns');
+    assert.equal(inject.searchQueryOf('???'), '');
   });
 });

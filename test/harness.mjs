@@ -29,7 +29,13 @@ z.number = () => chain();
 z.array = () => chain();
 export default z;
 `,
-  'dsh-tools': `export const defineTool = (tool) => tool;\n`,
+  'dsh-tools': `export const defineTool = (tool) => {
+  // Mirror DSH: defineTool reads options.output.render unguarded.
+  const userRender = tool.output.render;
+  if (typeof userRender !== 'function') throw new TypeError('tool must declare output.render');
+  return tool;
+};
+`,
 };
 
 export function ensureStubs() {
@@ -57,7 +63,7 @@ export async function loadPlugin() {
   const src = join(ROOT, 'lib', 'index.js');
   // rewrite relative imports so the copy resolves against the plugin's lib/
   const text = readFileSync(src, 'utf8')
-    .replace(/from '\.\/(store|search|dream)\.js'/g, (m, f) => `from ${JSON.stringify(pathToFileURL(join(ROOT, 'lib', `${f}.js`)).href)}`);
+    .replace(/from '\.\/(store|search|dream|inject)\.js'/g, (m, f) => `from ${JSON.stringify(pathToFileURL(join(ROOT, 'lib', `${f}.js`)).href)}`);
   writeFileSync(copy, text);
   return import(`${pathToFileURL(copy).href}?t=${Date.now()}`);
 }
@@ -73,6 +79,7 @@ export function makeHost() {
     commands: new Map(),
     tools: new Map(),
     sections: new Map(),
+    contexts: new Map(),
     listeners: new Map(),
     logs: [],
   };
@@ -83,7 +90,10 @@ export function makeHost() {
     },
     commands: { register: (def) => { host.commands.set(def.name, def); return () => host.commands.delete(def.name); } },
     tools: { register: (tool) => { host.tools.set(tool.name, tool); return () => host.tools.delete(tool.name); } },
-    systemPrompt: { section: (s) => { host.sections.set(s.name, s); return () => host.sections.delete(s.name); } },
+    systemPrompt: {
+      section: (s) => { host.sections.set(s.name, s); return () => host.sections.delete(s.name); },
+      context: (c) => { host.contexts.set(c.name, c); return () => host.contexts.delete(c.name); },
+    },
     on: (event, handler) => { if (!host.listeners.has(event)) host.listeners.set(event, []); host.listeners.get(event).push(handler); },
     effect: (fn) => { const dispose = fn(); return typeof dispose === 'function' ? dispose : () => {}; },
     get: () => undefined,

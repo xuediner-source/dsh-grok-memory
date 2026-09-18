@@ -23,10 +23,11 @@ dsh plugin --profile web add github:xuediner-source/dsh-grok-memory
 | **`/flush`**：把当前会话摘要写入日期会话日志 | 命令；会话太小时如实拒绝 |
 | **`/dream`**：把会话日志归并为去重的主题文件 | `lib/dream.js`，输出 `topics/<topic>.md` |
 | **自动会话摘要**：会话结束时写元数据摘要（消息计数 + 前 5 个主题），无 LLM 调用 | `agent/settled` 钩子 |
-| **门禁**：`min_hours=24`、`min_sessions=5`、`stale_lock_secs=3600` | `gatesOpen()` + 锁回收 |
-| **首次回合注入**：新会话首回合自动带上项目记忆 | system-prompt usage section |
+| **门禁**：`min_hours=4`、`min_sessions=3`、`stale_lock_secs=3600` | `gatesOpen()` + 锁回收 |
+| **首次回合注入**：新会话首回合自动带上本项目记忆 | `systemPrompt.context` 快照：注入 workspace/global `MEMORY.md`，并检索更早的 session 日志 |
+| **压缩后恢复**：compaction 后再搜一次记忆 | 监听 `compaction/completed`，刷新 recall 缓存 |
 | **`memory_search` / `memory_get` / `memory_forget`** | 四个模型工具 |
-| **搜索评分**：BM25 + 时间衰减（仅 session chunk，`half_life_days=30`）+ MMR（`lambda=0.7`） | `lib/search.js`，SQLite FTS5 |
+| **搜索评分**：BM25 + 时间衰减（仅 session chunk，`half_life_days=7`） | `lib/search.js`，SQLite FTS5；MMR 默认关闭（与官方一致，可开） |
 | **陈旧标注**：过期 session 记忆附"先验证再依赖"提示 | `stale` 标记 |
 | **`/memclear`**：workspace / global / all 三档清理 | 命令 |
 | **优先级规则**：当前会话指令 > 笔记 | usage section 中明文声明 |
@@ -39,6 +40,7 @@ dsh plugin --profile web add github:xuediner-source/dsh-grok-memory
 | 向量检索 | `vec0` + 可选 embedding（`vector_weight=0.7`） | 仅 FTS5 全文 | 无本地 embedding provider；官方也注明默认 embedding 未配置即全文模式 |
 | `/memory` 浏览器 | 分栏 Modal（列表 + 只读预览，`y` 复制路径等快捷键） | 命令行分组列表 | DSH 命令返回文本，无 Modal 面板 |
 | `/dream` 归并 | LLM 生成主题 | 规则式去重归并（按 `##` 标题分组 + 语句去重） | 规则式不调 LLM、零延迟、可测试；语义归并可后续接 LLM |
+| `/flush` | LLM 生成丰富摘要 | 元数据摘要（消息计数 + 前 5 个主题） | 不额外打模型；要记决策请用 `/remember` |
 | 环境变量开关 | `GROK_MEMORY=1/0` + TOML `[memory]` + 远程配置四级优先级 | 插件配置 `enabled` 字段 | DSH 插件体系用配置项而非环境变量 |
 
 ## 配置
@@ -50,21 +52,24 @@ dsh plugin --profile web add github:xuediner-source/dsh-grok-memory
     memoryRoot: "~/.dsh/memory"
     search:
       maxResults: 6
-      minScore: 0.7
+      minScore: 0.35
     dream:
-      minHours: 24
-      minSessions: 5
+      minHours: 4
+      minSessions: 3
       staleLockSecs: 3600
+    injection:
+      enabled: true
+      minScore: 0
 ```
 
 ## 验证
 
 ```sh
 npm run check   # 语法
-npm test        # 30 项测试
+npm test        # 35+ 项测试
 ```
 
-测试覆盖：存储布局与身份推导、FTS5 检索、时间衰减只作用于 session chunk、MMR 多样性重排、dream 门禁与锁回收、归并去重、摘要不泄漏工具用法、五个命令与四个工具的行为、生命周期钩子。
+测试覆盖：同源 git origin 共享目录、FTS5 检索、时间衰减只作用于 session chunk、MMR 多样性重排、dream 门禁与锁回收、归并去重、摘要不泄漏工具用法、五个命令与四个工具的行为、新对话自动注入上一对话的 workspace MEMORY.md、同一会话不重复写摘要。
 
 ## 许可
 

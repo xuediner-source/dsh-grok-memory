@@ -1,7 +1,7 @@
 {
   "name": "dsh-grok-memory",
-  "version": "0.1.0",
-  "description": "Grok Build-style cross-session memory for DeepSeek Harness: markdown notes (global + project scope), session logs, /remember /flush /dream, SQLite full-text search with temporal decay and MMR, first-turn injection.",
+  "version": "0.2.0",
+  "description": "Grok Build-style cross-session memory for DeepSeek Harness: markdown notes (global + project scope), first-turn injection so new conversations share prior project memory, session logs, /remember /flush /dream, SQLite full-text search.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -9,6 +9,7 @@
     "./store": "./lib/store.js",
     "./search": "./lib/search.js",
     "./dream": "./lib/dream.js",
+    "./inject": "./lib/inject.js",
     "./package.json": "./package.json"
   },
   "files": [
@@ -18,7 +19,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "check": "node --check lib/index.js && node --check lib/store.js && node --check lib/search.js && node --check lib/dream.js",
+    "check": "node --check lib/index.js && node --check lib/store.js && node --check lib/search.js && node --check lib/dream.js && node --check lib/inject.js",
     "test": "node --test test/*.test.mjs"
   },
   "dsh": {

@@ -34,6 +34,7 @@ describe('plugin: registration', () => {
     }
     for (const t of TOOLS) {
       assert.ok(host.tools.has(t), `tool ${t} must be registered`);
+      assert.equal(typeof host.tools.get(t).output?.render, 'function', `${t} must declare output.render`);
     }
   });
 
@@ -46,6 +47,7 @@ describe('plugin: registration', () => {
     // Official wording (13-memory.md): "Instructions in the current
     // conversation take precedence over anything stored in a note."
     assert.match(section.text, /current conversation take precedence/i);
+    assert.ok(host.contexts.get('grok-memory:snapshot'), 'first-turn snapshot context must be registered');
   });
 
   it('registers nothing when disabled', async () => {
@@ -160,6 +162,37 @@ describe('plugin: tool behaviour', () => {
   });
 });
 
+describe('plugin: same-project sharing', () => {
+  it('injects workspace MEMORY.md into a new conversation in the same project', async () => {
+    const mod = await loadPlugin();
+    const root = memoryRoot();
+    const dir = cwd();
+
+    const first = makeHost();
+    mod.apply(first.ctx, { memoryRoot: root });
+    const saved = first.host.commands.get('remember').handler({
+      rawInput: 'Preferences::always open PR links after pushing',
+      agent: agentFor(dir),
+    });
+    assert.equal(saved.kind, 'success');
+
+    const second = makeHost();
+    mod.apply(second.ctx, { memoryRoot: root });
+    const snap = second.host.contexts.get('grok-memory:snapshot').text({ agent: agentFor(dir) });
+    assert.match(snap, /Cross-session memory/);
+    assert.match(snap, /always open PR links after pushing/);
+    assert.match(snap, /current conversation take precedence/i);
+  });
+
+  it('does not inject an empty snapshot when the project has no memory yet', async () => {
+    const mod = await loadPlugin();
+    const { ctx, host } = makeHost();
+    mod.apply(ctx, { memoryRoot: memoryRoot() });
+    const snap = host.contexts.get('grok-memory:snapshot').text({ agent: agentFor(cwd()) });
+    assert.equal(snap, '');
+  });
+});
+
 describe('plugin: lifecycle hooks', () => {
   it('settled counts a session toward the dream gates and skips trivial ones', async () => {
     const mod = await loadPlugin();
@@ -187,5 +220,10 @@ describe('plugin: lifecycle hooks', () => {
     const paths = store.pathsFor(dir, root);
     const groups = store.listMemory(paths);
     assert.ok(groups.sessions.length >= 1, 'a dated session summary must be written');
+
+    const before = store.readText(groups.sessions[0]);
+    await emit(host, 'agent/settled', { agent: agentFor(dir) });
+    const after = store.readText(groups.sessions[0]);
+    assert.equal(after, before, 'a second settle of the same conversation must not duplicate the summary');
   });
 });

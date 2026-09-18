@@ -1,0 +1,16 @@
+fix: tools must declare output{schema,render} for the real DSH defineTool
+
+Host logs showed apply() crashing inside @deepseek-ai/dsh-tools defineTool
+with: Cannot read properties of undefined (reading 'render')
+
+defineTool reads options.output.render unguarded, so a tool defined without
+an output block throws as soon as the host loads the plugin.
+
+- every tool now passes output:textOutput (schema + render), matching the
+  known-good shape used by dsh-subs-hub
+- test stub for @deepseek-ai/dsh-tools now mirrors the host contract
+  (reads output.render, throws on missing/non-function) instead of a
+  passthrough that hid the bug
+- add lib/inject.js (first-turn memory injection) + tests
+- verified against the real defineTool extracted from app.asar: all 4 tools
+  construct successfully; plugin test suite 35/35 green
