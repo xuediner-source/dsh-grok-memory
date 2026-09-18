@@ -1,0 +1,14 @@
+# dsh-grok-memory bundle patch — mounts the memory plugin on any profile that
+# composes the base services (commands, tools, agents).
+#
+# Config overrides can be layered here:
+#
+#   - insert:
+#       - id: dsh-grok-memory
+#         config:
+#           enabled: true
+#           search:
+#             maxResults: 8
+- insert:
+    - id: dsh-grok-memory
+      name: dsh-grok-memory
